@@ -538,8 +538,11 @@ async function anotar(frase) {
     if (navigator.vibrate) navigator.vibrate(30);
     aviso('Anotando…', async () => {
       try {
-        await gh('/issues/' + i.number, { method: 'PATCH', body: JSON.stringify({ state: 'closed', state_reason: 'not_planned' }) });
+        // o PC é rápido: se já anotou, desfazer é apagar a tarefa que ele criou
+        const feita = estado && estado.itens.find(y => y.issue === i.number);
         guarda.set('recentes', anotacoes().map(r => r.n === i.number ? { ...r, cancelado: true } : r));
+        if (feita) { await enviarComando('apagar', feita); }
+        else await gh('/issues/' + i.number, { method: 'PATCH', body: JSON.stringify({ state: 'closed', state_reason: 'not_planned' }) });
         desenhar(); aviso('Desfeito.');
       } catch { aviso('Não consegui desfazer.'); }
     });
@@ -549,8 +552,8 @@ async function anotar(frase) {
   }
 }
 async function esperarAnotacao(numero) {
-  for (let k = 0; k < 30; k++) {                 // até ~2,5 min
-    await new Promise(r => setTimeout(r, 5000));
+  for (let k = 0; k < 45; k++) {                 // de 2 em 2s no começo, depois de 5 em 5s (~2,5 min)
+    await new Promise(r => setTimeout(r, k < 20 ? 2000 : 5000));
     await buscar();
     const x = estado && estado.itens.find(y => y.issue === numero);
     if (x) { aviso('✓ ' + x.texto + (x.quando ? ' · ' + quandoCurto(x.quando) : '')); return; }
@@ -579,7 +582,7 @@ async function buscar() {
   } catch {} finally { buscando = false; }
 }
 let tLogo = null;
-function buscarLogo() { clearTimeout(tLogo); tLogo = setTimeout(buscar, 25000); }
+function buscarLogo() { clearTimeout(tLogo); tLogo = setTimeout(buscar, 5000); }
 
 /* ---------- ouvir ---------- */
 const Reconhecer = window.SpeechRecognition || window.webkitSpeechRecognition;

@@ -1,6 +1,6 @@
 // Service worker mínimo: o Android só oferece "Instalar app" com um. Rede
 // primeiro, cache só de reserva — mudança na página chega na hora.
-const CACHE = 'alfred-v3';
+const CACHE = 'alfred-v4';
 self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.addAll(['./', 'index.html', 'manifest.webmanifest']))); });
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', e => {
