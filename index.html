@@ -139,6 +139,28 @@
   .ajustes .salvar { padding: 15px; border-radius: 12px; background: var(--cor); color: #fff; font-weight: 600; }
   .ajustes .troca { align-self: flex-start; }
   .erro { color: var(--perigo) !important; }
+  .ola { cursor: pointer; }
+
+  /* ---------- painel da tarefa (toque numa linha) ---------- */
+  /* camadas: base 10 < folha 15 < véu 20 < painel 21 < aviso 30 */
+  .base { z-index: 10; } .folha { z-index: 15; } .aviso { z-index: 30; } .painel { z-index: 21; }
+  .veu { position: fixed; inset: 0; background: rgba(0,0,0,.32); z-index: 20; }
+  .painel { position: fixed; left: 0; right: 0; bottom: 0; max-height: 88dvh; overflow-y: auto; background: var(--cartao);
+    border-radius: 22px 22px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.16); display: flex; flex-direction: column; gap: 16px;
+    padding: 12px max(22px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(22px, env(safe-area-inset-left)); }
+  .painel .alca { width: 38px; height: 5px; border-radius: 3px; background: var(--linha); align-self: center; }
+  .painel h2 { font-family: var(--f-titulo); font-weight: 400; font-size: 24px; margin: 0; }
+  .painel label { font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase; font-weight: 600; color: var(--suave); }
+  .painel input { width: 100%; padding: 13px 14px; border-radius: 12px; border: 1px solid var(--linha); background: var(--fundo);
+    color: var(--texto); font: inherit; font-size: 17px; }
+  .campo { display: flex; flex-direction: column; gap: 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chips button { padding: 8px 13px; border-radius: 99px; background: var(--pilula); font-size: 14px; font-weight: 500; }
+  .chips button[aria-pressed="true"] { background: var(--cor); color: #fff; }
+  .acoes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .acoes button { padding: 14px 10px; border-radius: 12px; background: var(--pilula); font-weight: 600; font-size: 15px; }
+  .acoes .principal { grid-column: 1 / -1; background: var(--cor); color: #fff; }
+  .acoes .perigo { color: var(--perigo); }
 </style>
 </head>
 <body>
@@ -183,6 +205,34 @@
   </form>
 </section>
 
+<div class="veu" id="veu" hidden></div>
+<section class="painel" id="painel" hidden aria-label="Tarefa">
+  <span class="alca"></span>
+  <h2 id="p-titulo">Tarefa</h2>
+  <div class="campo"><label for="p-texto">O que fazer</label><input id="p-texto" autocomplete="off"></div>
+  <div class="campo" id="p-quando-bloco">
+    <label for="p-quando">Quando</label>
+    <div class="chips" id="p-chips">
+      <button data-q="1h">Em 1 hora</button><button data-q="noite">Hoje 20:00</button>
+      <button data-q="amanha">Amanhã 9:00</button><button data-q="nada">Sem data</button>
+    </div>
+    <input id="p-quando" type="datetime-local">
+  </div>
+  <div class="acoes" id="p-acoes">
+    <button class="principal" id="p-salvar">Salvar</button>
+    <button id="p-concluir">Concluir</button>
+    <button id="p-mover">Mover para Nice</button>
+    <button class="perigo" id="p-apagar" style="grid-column: 1 / -1">Apagar</button>
+  </div>
+</section>
+
+<section class="painel" id="p-nome" hidden aria-label="Seu nome">
+  <span class="alca"></span>
+  <h2>Como devo te chamar?</h2>
+  <input id="p-nome-campo" autocomplete="given-name" placeholder="Seu nome">
+  <div class="acoes"><button class="principal" id="p-nome-salvar">Salvar</button></div>
+</section>
+
 <div class="aviso" id="aviso" hidden><span id="aviso-txt"></span><button id="aviso-acao" hidden>Desfazer</button></div>
 
 <nav class="base" id="base" hidden>
@@ -213,8 +263,8 @@ function gh(caminho, opcoes = {}) {
   return fetch(API + caminho, { cache: 'no-store', ...opcoes, headers: { Authorization: 'Bearer ' + chave,
     Accept: 'application/vnd.github+json', 'content-type': 'application/json' } });
 }
-async function abrirIssue(titulo) {
-  const r = await gh('/issues', { method: 'POST', body: JSON.stringify({ title: titulo }) });
+async function abrirIssue(titulo, corpo) {
+  const r = await gh('/issues', { method: 'POST', body: JSON.stringify(corpo ? { title: titulo, body: corpo } : { title: titulo }) });
   if (r.status === 401 || r.status === 403 || r.status === 404) throw Object.assign(new Error('chave'), { chave: true });
   if (!r.ok) throw new Error('GitHub ' + r.status);
   return r.json();
@@ -247,7 +297,11 @@ function itensVisiveis() {
   for (const op of pendentes().filter(o => o.ctx === ctx && !feitos.has(o.n))) {
     const i = itens.findIndex(x => x.id === op.id);
     if (i === -1) continue;
-    if (op.acao === 'apagar') itens.splice(i, 1);
+    if (op.acao === 'apagar' || op.acao === 'mover') itens.splice(i, 1);
+    else if (op.acao === 'editar') {
+      if (op.dados.texto) itens[i].texto = op.dados.texto;
+      if ('quando' in op.dados) itens[i].quando = op.dados.quando;
+    }
     else if (op.acao === 'reabrir') { itens[i].feito = false; itens[i].feitoEm = null; }
     else if (op.acao === 'concluir') {
       if (itens[i].repete) itens.splice(i, 1);          // o PC reagenda; some até voltar com a nova data
@@ -255,9 +309,12 @@ function itensVisiveis() {
     }
   }
   // anotações que o PC ainda não leu aparecem como "anotando…"
+  // some quando o PC disser que processou — mesmo que depois a tarefa tenha
+  // sido concluída ou apagada em outro lugar
   const comIssue = new Set(itens.map(x => x.issue).filter(Boolean));
-  const esperando = anotacoes().filter(r => r.ctx === ctx && !r.cancelado && !comIssue.has(r.n) && Date.now() - r.em < 3 * 86400000)
-    .map(r => ({ id: 'n' + r.n, texto: r.frase, esperando: true }));
+  const jaLidas = new Set([...((guarda.get('estado.pessoal', {}) || {}).processados || []), ...((guarda.get('estado.nice', {}) || {}).processados || [])]);
+  const esperando = anotacoes().filter(r => r.ctx === ctx && !r.cancelado && !r.resolvido && !comIssue.has(r.n) && !jaLidas.has(r.n) && Date.now() - r.em < 3 * 86400000)
+    .map(r => ({ id: 'n' + r.n, n: r.n, texto: r.frase, esperando: true }));
   return { itens, esperando };
 }
 
@@ -274,11 +331,18 @@ function linha(x, tipo) {
   li.querySelector('.t').textContent = x.texto;
   li.querySelector('.h').textContent = h;
   if (x.etiqueta) { const s = document.createElement('span'); s.className = 'tag'; s.textContent = x.etiqueta; li.querySelector('.txt').appendChild(s); }
-  if (!x.esperando) {
+  if (x.esperando) {
+    // ainda não chegou ao PC: arrastar mostra Cancelar, e ele nem chega a anotar
+    li.querySelector('.apagar').textContent = 'Cancelar';
+    li.querySelector('.apagar').addEventListener('click', () => cancelarAnotacao(x.n));
+  } else {
     li.querySelector('.bol').addEventListener('click', e => { e.stopPropagation(); enviarComando(x.feito ? 'reabrir' : 'concluir', x); });
     li.querySelector('.apagar').addEventListener('click', () => enviarComando('apagar', x));
-    arrastar(li);
+    li.querySelector('.txt').addEventListener('click', () => {
+      if (!aberta && !(li._arrastou && Date.now() - li._arrastou < 400)) abrirPainel(x);
+    });
   }
+  arrastar(li);
   return li;
 }
 function secao(titulo, lista, tipo, vazio) {
@@ -358,6 +422,7 @@ function arrastar(li) {
   const soltar = () => {
     if (!ativo) return; ativo = false; li.classList.remove('arrastando');
     if (!decidido) return;
+    li._arrastou = Date.now();          // o toque que termina um arrasto não abre o painel
     if (dx < -42) { frente.style.transform = 'translateX(-84px)'; aberta = li; }
     else { frente.style.transform = ''; if (aberta === li) aberta = null; }
   };
@@ -378,15 +443,17 @@ function erroDeChave(e) {
   return false;
 }
 
-/* ---------- concluir, apagar, reabrir ---------- */
-async function enviarComando(acao, x) {
+/* ---------- concluir, apagar, reabrir, editar, mover ---------- */
+async function enviarComando(acao, x, dados) {
   fecharAberta();
-  const op = { acao, id: x.id, ctx, em: new Date().toISOString(), n: null };
+  const op = { acao, id: x.id, ctx, em: new Date().toISOString(), n: null, dados: dados || {} };
   const ops = pendentes(); ops.push(op); guarda.set('ops', ops);
+  // a anotação que deu origem à tarefa deixa de ser "anotando…" de vez
+  if (x.issue) guarda.set('recentes', anotacoes().map(r => r.n === x.issue ? { ...r, resolvido: true } : r));
   if (navigator.vibrate) navigator.vibrate(15);
   desenhar();
   try {
-    const i = await abrirIssue('[' + ctx + ':' + acao + '] ' + x.id + ' · ' + x.texto.slice(0, 60));
+    const i = await abrirIssue('[' + ctx + ':' + acao + '] ' + x.id + ' · ' + x.texto.slice(0, 60), dados ? JSON.stringify(dados) : '');
     const lista = pendentes(); const o = lista.find(y => y.em === op.em && y.id === op.id); if (o) o.n = i.number; guarda.set('ops', lista);
     if (acao === 'apagar') aviso('Apagada.');
     buscarLogo();
@@ -396,6 +463,68 @@ async function enviarComando(acao, x) {
     if (!erroDeChave(e)) aviso('Sem internet? Não consegui ' + acao + '.');
   }
 }
+
+/* ---------- cancelar uma anotação que o PC ainda não leu ---------- */
+async function cancelarAnotacao(n) {
+  fecharAberta();
+  guarda.set('recentes', anotacoes().map(r => r.n === n ? { ...r, cancelado: true } : r));
+  desenhar();
+  try {
+    await gh('/issues/' + n, { method: 'PATCH', body: JSON.stringify({ state: 'closed', state_reason: 'not_planned' }) });
+    aviso('Cancelada. Não vou anotar.');
+  } catch { aviso('Sem internet? Não consegui cancelar.'); }
+}
+
+/* ---------- painel da tarefa ---------- */
+let alvo = null;
+const paraCampo = iso => { if (!iso) return ''; const d = new Date(iso); return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) + 'T' + hora(d); };
+function abrirPainel(x) {
+  alvo = x;
+  $('p-titulo').textContent = x.feito ? 'Tarefa feita' : 'Tarefa';
+  $('p-texto').value = x.texto;
+  $('p-quando').value = paraCampo(x.quando);
+  $('p-quando-bloco').hidden = !!x.feito;
+  $('p-concluir').textContent = x.feito ? 'Reabrir' : 'Concluir';
+  $('p-mover').textContent = 'Mover para ' + (ctx === 'pessoal' ? 'Nice' : 'Pessoal');
+  document.querySelectorAll('#p-chips button').forEach(b => b.setAttribute('aria-pressed', 'false'));
+  $('veu').hidden = false; $('painel').hidden = false;
+}
+function fecharPainel() { $('veu').hidden = true; $('painel').hidden = true; $('p-nome').hidden = true; alvo = null; }
+$('veu').addEventListener('click', fecharPainel);
+document.querySelectorAll('#p-chips button').forEach(b => b.addEventListener('click', () => {
+  const d = new Date();
+  if (b.dataset.q === '1h') d.setMinutes(d.getMinutes() + 60, 0, 0);
+  if (b.dataset.q === 'noite') { d.setHours(20, 0, 0, 0); if (d < new Date()) d.setDate(d.getDate() + 1); }
+  if (b.dataset.q === 'amanha') { d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); }
+  $('p-quando').value = b.dataset.q === 'nada' ? '' : paraCampo(d.toISOString());
+  document.querySelectorAll('#p-chips button').forEach(y => y.setAttribute('aria-pressed', String(y === b)));
+}));
+$('p-salvar').addEventListener('click', () => {
+  if (!alvo) return;
+  const x = alvo, dados = {};
+  const texto = $('p-texto').value.trim();
+  if (texto && texto !== x.texto) dados.texto = texto;
+  if (!x.feito) {
+    const v = $('p-quando').value;
+    const novo = v ? new Date(v).toISOString() : null;
+    if ((novo || null) !== (x.quando ? new Date(x.quando).toISOString() : null)) dados.quando = novo;
+  }
+  fecharPainel();
+  if (!Object.keys(dados).length) return;
+  enviarComando('editar', x, dados);
+  aviso('Alterada.' + ('quando' in dados && dados.quando ? ' A agenda acompanha.' : ''));
+});
+$('p-concluir').addEventListener('click', () => { const x = alvo; fecharPainel(); if (x) enviarComando(x.feito ? 'reabrir' : 'concluir', x); });
+$('p-apagar').addEventListener('click', () => { const x = alvo; fecharPainel(); if (x) enviarComando('apagar', x); });
+$('p-mover').addEventListener('click', () => {
+  const x = alvo; fecharPainel(); if (!x) return;
+  enviarComando('mover', x);
+  aviso('Movida para ' + (ctx === 'pessoal' ? 'Nice' : 'Pessoal') + '.');
+});
+
+/* ---------- nome no cumprimento ---------- */
+$('ola').addEventListener('click', () => { $('p-nome-campo').value = nome; $('veu').hidden = false; $('p-nome').hidden = false; setTimeout(() => $('p-nome-campo').focus(), 50); });
+$('p-nome-salvar').addEventListener('click', () => { nome = $('p-nome-campo').value.trim(); guarda.set('nome', nome); fecharPainel(); desenhar(); });
 
 /* ---------- anotar ---------- */
 async function anotar(frase) {
