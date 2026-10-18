@@ -1,11 +1,11 @@
 {
-  "name": "Secretário",
-  "short_name": "Secretário",
+  "name": "Alfred",
+  "short_name": "Alfred",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#0b0b0c",
-  "theme_color": "#0b0b0c",
+  "background_color": "#f6f6f3",
+  "theme_color": "#f6f6f3",
   "icons": [
     { "src": "icone-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "icone-512.png", "sizes": "512x512", "type": "image/png" },

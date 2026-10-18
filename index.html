@@ -3,297 +3,542 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<title>Secretário</title>
-<meta name="theme-color" content="#0b0b0c">
+<title>Alfred</title>
+<meta name="theme-color" content="#f6f6f3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101311" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Secretário">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Alfred">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icone-180.png">
 <link rel="icon" href="icone-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Hanken+Grotesk:wght@400;500;600&display=swap">
 <!--
-  Secretário de bolso. Toca, fala, anota.
+  Alfred — o secretário de bolso. Toca, fala, anota; e mostra o dia.
 
-  O celular não fala com o PC (que dorme): a frase vira uma issue no repo
-  privado Bruce-, e a ponte do PC (scripts/caixa-celular.js) busca a cada
-  minuto, interpreta com o Claude, grava no secretário certo e fecha a issue
-  com o que entendeu. Esta página só guarda a frase e mostra a resposta.
+  O celular não fala com o PC (que dorme). Tudo passa por issues no repo
+  privado do secretário:
+    • anotar:   abre "[pessoal] <frase>"
+    • concluir/apagar/reabrir: abre "[pessoal:concluir] <id>"
+    • a lista:  a ponte do PC escreve numa issue fechada "[estado pessoal]"
+  A ponte (scripts/caixa-celular.js) aplica tudo a cada 20s com o PC ligado.
+  Com ele dormindo, o que você faz aqui fica na fila e aparece já aplicado.
 
-  A chave do GitHub fica só neste aparelho (localStorage), nunca no código.
+  A chave do GitHub e o seu nome ficam só neste aparelho (localStorage).
 -->
 <style>
   :root {
-    --fundo: #fafaf9; --texto: #1c1917; --suave: #78716c; --linha: #e7e5e4;
-    --cartao: #ffffff; --ok: #15803d; --erro: #b91c1c;
-    --cor: #16a34a; --cor-fraca: rgba(22, 163, 74, .14);
+    --fundo: #f6f6f3; --texto: #1d2421; --suave: #6b726e; --fraco: #9aa29e; --linha: #e3e5e1;
+    --pilula: #e6e8e4; --pilula-on: #ffffff; --cartao: #ffffff; --perigo: #b4332b; --ok: #1f6f4a;
+    --cor: #1f6f4a; --cor-clara: #e1efe7; --cor-sombra: rgba(31,111,74,.55);
+    --f-titulo: "Newsreader", Georgia, "Times New Roman", serif;
+    --f-texto: "Hanken Grotesk", -apple-system, "Segoe UI", Roboto, sans-serif;
   }
-  :root[data-ctx="nice"] { --cor: #2563eb; --cor-fraca: rgba(37, 99, 235, .14); }
+  :root[data-ctx="nice"] { --cor: #1d4ed8; --cor-clara: #e3eafc; --cor-sombra: rgba(29,78,216,.5); }
   @media (prefers-color-scheme: dark) {
-    :root { --fundo: #0b0b0c; --texto: #f5f5f4; --suave: #a8a29e; --linha: #292524;
-            --cartao: #161514; --ok: #4ade80; --erro: #f87171; }
-    :root[data-ctx="pessoal"] { --cor: #22c55e; --cor-fraca: rgba(34, 197, 94, .16); }
-    :root[data-ctx="nice"] { --cor: #3b82f6; --cor-fraca: rgba(59, 130, 246, .18); }
+    :root { --fundo: #101311; --texto: #e8ebe9; --suave: #9aa29e; --fraco: #6b736f; --linha: #232825;
+      --pilula: #1c211e; --pilula-on: #343c37; --cartao: #1a1f1c; --perigo: #e0574d; --ok: #4cc28a;
+      --cor: #3fae79; --cor-clara: #173426; --cor-sombra: rgba(63,174,121,.4); color-scheme: dark; }
+    :root[data-ctx="nice"] { --cor: #4f7df0; --cor-clara: #1a2647; --cor-sombra: rgba(79,125,240,.45); }
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; height: 100%; background: var(--fundo); color: var(--texto);
-    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  body { display: flex; flex-direction: column; min-height: 100dvh;
-    padding: max(16px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
-             max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); }
+    font: 16px/1.4 var(--f-texto); -webkit-font-smoothing: antialiased; }
+  body { display: flex; flex-direction: column; overscroll-behavior: none; }
   button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--cor); outline-offset: 2px; }
   [hidden] { display: none !important; }
 
-  header { display: flex; justify-content: center; }
-  .ctx { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: var(--linha); }
-  .ctx button { padding: 7px 16px; border-radius: 999px; font-size: 14px; color: var(--suave); font-weight: 500; }
-  .ctx button[aria-pressed="true"] { background: var(--cartao); color: var(--texto);
-    box-shadow: 0 1px 2px rgba(0,0,0,.08); }
-  .ctx button[aria-pressed="true"]::before { content: ""; display: inline-block; width: 7px; height: 7px;
-    border-radius: 50%; background: var(--cor); margin-right: 7px; vertical-align: 1px; }
+  /* ---------- topo ---------- */
+  .topo { flex: none; display: flex; justify-content: space-between; align-items: center;
+    padding: max(14px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 0 max(20px, env(safe-area-inset-left)); }
+  .marca { font-size: 12px; letter-spacing: .24em; font-weight: 600; color: var(--suave); padding: 6px 0; }
+  .troca { display: flex; gap: 2px; background: var(--pilula); border-radius: 99px; padding: 3px; }
+  .troca button { padding: 6px 13px; border-radius: 99px; font-size: 13px; font-weight: 600; color: var(--fraco); }
+  .troca button[aria-pressed="true"] { background: var(--pilula-on); color: var(--texto); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
 
-  main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; }
-  .fala { min-height: 3.2em; max-width: 30ch; text-align: center; font-size: 22px; font-weight: 500;
-    letter-spacing: -.01em; }
-  .fala.vazia { color: var(--suave); font-weight: 400; font-size: 18px; }
-  .mic { width: 112px; height: 112px; border-radius: 50%; background: var(--cor); color: #fff;
-    display: grid; place-items: center; position: relative; transition: transform .15s; }
-  .mic:active { transform: scale(.96); }
-  .mic svg { width: 40px; height: 40px; }
-  .mic.ouvindo::after { content: ""; position: absolute; inset: -14px; border-radius: 50%;
-    background: var(--cor-fraca); animation: pulsa 1.2s ease-out infinite; z-index: -1; }
-  @keyframes pulsa { 0% { transform: scale(.85); opacity: 1; } 100% { transform: scale(1.25); opacity: 0; } }
-  .estado { min-height: 1.4em; font-size: 15px; color: var(--suave); text-align: center; }
-  .estado.ok { color: var(--ok); } .estado.erro { color: var(--erro); }
-  .acao { font-size: 14px; color: var(--suave); text-decoration: underline; text-underline-offset: 3px; }
+  /* ---------- corpo rolável ---------- */
+  .rola { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding: 0 max(20px, env(safe-area-inset-right)) 140px max(20px, env(safe-area-inset-left)); }
+  .ola { font-family: var(--f-titulo); font-weight: 400; font-size: 34px; line-height: 1.08; margin: 18px 0 6px; letter-spacing: -.01em; text-wrap: balance; }
+  .dia { font-size: 14px; color: var(--suave); margin: 0 0 22px; }
+  .secao { margin: 0 0 22px; }
+  .rotulo { display: flex; justify-content: space-between; font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase;
+    font-weight: 600; color: var(--suave); padding-bottom: 6px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  .vazio { color: var(--fraco); font-size: 14.5px; padding: 10px 0; }
 
-  .digitar { width: 100%; max-width: 420px; display: flex; gap: 8px; }
-  .digitar input { flex: 1; min-width: 0; padding: 13px 14px; border-radius: 12px; border: 1px solid var(--linha);
-    background: var(--cartao); color: var(--texto); font: inherit; font-size: 17px; }
-  .digitar button { padding: 0 16px; border-radius: 12px; background: var(--cor); color: #fff; font-weight: 600; }
+  /* linha de tarefa: arrastar para a esquerda revela Apagar */
+  li.tarefa { position: relative; overflow: hidden; border-bottom: 1px solid var(--linha); }
+  li.tarefa .apagar { position: absolute; top: 0; right: 0; bottom: 0; width: 84px; background: var(--perigo); color: #fff;
+    font-size: 14px; font-weight: 600; }
+  li.tarefa .frente { position: relative; display: flex; align-items: center; gap: 12px; padding: 13px 0; background: var(--fundo);
+    touch-action: pan-y; transition: transform .2s ease; font-size: 16px; }
+  li.tarefa.arrastando .frente { transition: none; }
+  .bol { width: 24px; height: 24px; border-radius: 50%; border: 1.75px solid var(--fraco); flex: none; position: relative; }
+  .bol::after { content: ""; position: absolute; left: 7.5px; top: 3.5px; width: 5px; height: 10px; border: solid #fff;
+    border-width: 0 2px 2px 0; transform: rotate(45deg); opacity: 0; }
+  .feita .bol { background: var(--cor); border-color: var(--cor); }
+  .feita .bol::after { opacity: 1; }
+  .txt { flex: 1; min-width: 0; }
+  .txt .t { display: block; overflow-wrap: anywhere; }
+  .feita .t { text-decoration: line-through; color: var(--fraco); }
+  .tag { display: inline-block; margin-top: 3px; font-size: 11.5px; color: var(--cor); background: var(--cor-clara); padding: 1px 8px; border-radius: 99px; }
+  .h { flex: none; font-variant-numeric: tabular-nums; color: var(--suave); font-size: 14px; text-align: right; }
+  .h.atraso { color: var(--perigo); }
+  .feita .h { color: var(--fraco); }
+  .esperando .t { color: var(--suave); font-style: italic; }
+  .esperando .bol { border-style: dashed; }
 
-  .recentes { list-style: none; margin: 0 auto; padding: 0; width: 100%; max-width: 420px; }
-  .recentes li { display: flex; gap: 10px; align-items: baseline; padding: 10px 2px; border-top: 1px solid var(--linha);
-    font-size: 15px; }
-  .recentes .marca { width: 1.2em; flex: none; text-align: center; }
-  .recentes .txt { flex: 1; min-width: 0; }
-  .recentes .sub { display: block; color: var(--suave); font-size: 13px; }
+  /* ---------- histórico ---------- */
+  .voltar { font-size: 14px; color: var(--suave); margin: 18px 0 0; display: inline-flex; gap: 6px; align-items: center; }
+  .hist-dia { font-family: var(--f-titulo); font-size: 20px; margin: 22px 0 6px; font-weight: 400; }
 
-  .config { max-width: 420px; margin: auto; display: flex; flex-direction: column; gap: 14px; }
-  .config h1 { font-size: 22px; margin: 0; }
-  .config p { margin: 0; color: var(--suave); font-size: 15px; }
-  .config input { padding: 13px 14px; border-radius: 12px; border: 1px solid var(--linha); background: var(--cartao);
-    color: var(--texto); font: inherit; font-size: 15px; }
-  .config .salvar { padding: 14px; border-radius: 12px; background: var(--cor); color: #fff; font-weight: 600; }
+  /* ---------- base fixa: histórico · mic · escrever ---------- */
+  .base { position: fixed; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+    padding: 14px max(24px, env(safe-area-inset-right)) max(22px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+    background: linear-gradient(to top, var(--fundo) 62%, transparent); }
+  .base .link { font-size: 14px; color: var(--suave); padding: 10px 0; }
+  .base .link:last-child { justify-self: end; }
+  .base .link:first-child { justify-self: start; }
+  .mic { width: 72px; height: 72px; border-radius: 50%; background: var(--cor); color: #fff; display: grid; place-items: center;
+    box-shadow: 0 10px 22px -10px var(--cor-sombra); position: relative; transition: transform .15s; }
+  .mic:active { transform: scale(.95); }
+  .mic svg { width: 28px; height: 28px; }
+  .mic.ouvindo::after { content: ""; position: absolute; inset: -12px; border-radius: 50%; background: var(--cor-clara); z-index: -1;
+    animation: pulsa 1.2s ease-out infinite; }
+  @keyframes pulsa { 0% { transform: scale(.8); opacity: 1; } 100% { transform: scale(1.25); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .mic.ouvindo::after { animation: none; } li.tarefa .frente { transition: none; } }
+
+  /* ---------- folha de fala / escrita e aviso ---------- */
+  .folha { position: fixed; left: 0; right: 0; bottom: 0; background: var(--cartao); border-radius: 22px 22px 0 0;
+    box-shadow: 0 -8px 30px rgba(0,0,0,.12); padding: 22px max(22px, env(safe-area-inset-right)) calc(118px + env(safe-area-inset-bottom)) max(22px, env(safe-area-inset-left));
+    display: flex; flex-direction: column; gap: 10px; }
+  .folha .ouv { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; font-weight: 600; color: var(--cor); }
+  .folha .fala { font-family: var(--f-titulo); font-size: 24px; line-height: 1.25; min-height: 1.3em; }
+  .folha .fala.vazia { color: var(--fraco); }
+  .folha form { display: flex; gap: 8px; }
+  .folha input { flex: 1; min-width: 0; padding: 13px 14px; border-radius: 12px; border: 1px solid var(--linha); background: var(--fundo);
+    color: var(--texto); font: inherit; font-size: 17px; }
+  .folha form button { padding: 0 18px; border-radius: 12px; background: var(--cor); color: #fff; font-weight: 600; }
+  .aviso { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(112px + env(safe-area-inset-bottom));
+    max-width: calc(100% - 40px); display: flex; gap: 14px; align-items: center; background: var(--texto); color: var(--fundo);
+    padding: 11px 16px; border-radius: 14px; font-size: 14.5px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+  .aviso button { color: var(--fundo); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; flex: none; }
+
+  /* ---------- ajustes (primeira vez e toque em ALFRED) ---------- */
+  .ajustes { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; max-width: 440px; width: 100%; margin: 0 auto;
+    padding: 28px max(22px, env(safe-area-inset-right)) 40px max(22px, env(safe-area-inset-left)); }
+  .ajustes h1 { font-family: var(--f-titulo); font-weight: 400; font-size: 32px; margin: 0; }
+  .ajustes p, .ajustes label { margin: 0; color: var(--suave); font-size: 14.5px; }
+  .ajustes input { padding: 13px 14px; border-radius: 12px; border: 1px solid var(--linha); background: var(--cartao);
+    color: var(--texto); font: inherit; font-size: 16px; width: 100%; }
+  .ajustes .salvar { padding: 15px; border-radius: 12px; background: var(--cor); color: #fff; font-weight: 600; }
+  .ajustes .troca { align-self: flex-start; }
+  .erro { color: var(--perigo) !important; }
 </style>
 </head>
 <body>
 
-<section class="config" id="config" hidden>
-  <h1>Secretário</h1>
-  <p>Cole a chave do GitHub uma vez. Ela fica só neste celular.</p>
+<!-- ajustes: primeira vez, ou toque em ALFRED -->
+<section class="ajustes" id="ajustes" hidden>
+  <h1>Alfred</h1>
+  <p>Três coisas, uma vez só. Ficam guardadas apenas neste celular.</p>
+  <label for="nome">Como ele te chama</label>
+  <input id="nome" autocomplete="given-name" placeholder="Seu nome">
+  <label for="chave">Chave do GitHub</label>
   <input id="chave" type="password" autocomplete="off" placeholder="github_pat_…">
-  <p>Este celular anota, por padrão, no:</p>
-  <div class="ctx" id="ctx-config" style="align-self:flex-start">
-    <button data-ctx="pessoal">Pessoal</button>
-    <button data-ctx="nice">Nice</button>
-  </div>
+  <label>Este celular abre no</label>
+  <div class="troca" id="troca-ajustes"><button data-ctx="pessoal">Pessoal</button><button data-ctx="nice">Nice</button></div>
   <button class="salvar" id="salvar">Salvar</button>
-  <div class="estado" id="estado-config"></div>
+  <p id="estado-ajustes"></p>
 </section>
 
-<header id="topo" hidden>
-  <div class="ctx" id="ctx-topo">
-    <button data-ctx="pessoal">Pessoal</button>
-    <button data-ctx="nice">Nice</button>
-  </div>
+<header class="topo" id="topo" hidden>
+  <button class="marca" id="abrir-ajustes" aria-label="Ajustes do Alfred">ALFRED</button>
+  <div class="troca" id="troca"><button data-ctx="pessoal">Pessoal</button><button data-ctx="nice">Nice</button></div>
 </header>
 
-<main id="tela" hidden>
-  <div class="fala vazia" id="fala">Toque e fale</div>
-  <button class="mic" id="mic" aria-label="Falar">
+<main class="rola" id="rola" hidden>
+  <div id="hoje-tela">
+    <h1 class="ola" id="ola"></h1>
+    <p class="dia" id="dia"></p>
+    <div id="listas"></div>
+  </div>
+  <div id="hist-tela" hidden>
+    <button class="voltar" id="voltar">‹ Hoje</button>
+    <div id="hist"></div>
+  </div>
+</main>
+
+<section class="folha" id="folha" hidden>
+  <span class="ouv" id="folha-rotulo">Ouvindo</span>
+  <div class="fala vazia" id="fala">Pode falar…</div>
+  <form id="escrever-form" hidden>
+    <input id="campo" enterkeyhint="send" autocomplete="off" placeholder="O que eu anoto?">
+    <button>Anotar</button>
+  </form>
+</section>
+
+<div class="aviso" id="aviso" hidden><span id="aviso-txt"></span><button id="aviso-acao" hidden>Desfazer</button></div>
+
+<nav class="base" id="base" hidden>
+  <button class="link" id="ir-hist">Histórico</button>
+  <button class="mic" id="mic" aria-label="Falar com o Alfred">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v4"/>
     </svg>
   </button>
-  <div class="estado" id="estado"></div>
-  <button class="acao" id="desfazer" hidden>Desfazer</button>
-  <form class="digitar" id="digitar" hidden>
-    <input id="campo" enterkeyhint="send" placeholder="Escreva ou dite pelo teclado">
-    <button>Anotar</button>
-  </form>
-  <button class="acao" id="teclado">Escrever</button>
-</main>
-
-<ul class="recentes" id="recentes" hidden></ul>
+  <button class="link" id="ir-escrever">Escrever</button>
+</nav>
 
 <script>
 const REPO = 'LorenzzoVrnz/Bruce-';
 const API = 'https://api.github.com/repos/' + REPO;
 const $ = id => document.getElementById(id);
 
-/* ---------- guardado neste aparelho ---------- */
+/* ---------- guardado só neste aparelho ---------- */
 const guarda = {
   get(k, p) { try { const v = localStorage.getItem('sec.' + k); return v === null ? p : JSON.parse(v); } catch { return p; } },
   set(k, v) { try { localStorage.setItem('sec.' + k, JSON.stringify(v)); } catch {} },
 };
 let ctx = guarda.get('ctx', 'pessoal');
 let chave = guarda.get('chave', '');
+let nome = guarda.get('nome', '');
 
 function gh(caminho, opcoes = {}) {
-  return fetch(API + caminho, { ...opcoes, headers: { Authorization: 'Bearer ' + chave,
+  return fetch(API + caminho, { cache: 'no-store', ...opcoes, headers: { Authorization: 'Bearer ' + chave,
     Accept: 'application/vnd.github+json', 'content-type': 'application/json' } });
 }
-
-/* ---------- contexto: verde pessoal, azul Nice ---------- */
-function mostrarCtx() {
-  document.documentElement.dataset.ctx = ctx;
-  document.querySelectorAll('.ctx button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.ctx === ctx)));
+async function abrirIssue(titulo) {
+  const r = await gh('/issues', { method: 'POST', body: JSON.stringify({ title: titulo }) });
+  if (r.status === 401 || r.status === 403 || r.status === 404) throw Object.assign(new Error('chave'), { chave: true });
+  if (!r.ok) throw new Error('GitHub ' + r.status);
+  return r.json();
 }
-document.querySelectorAll('.ctx button').forEach(b => b.addEventListener('click', () => {
-  ctx = b.dataset.ctx; guarda.set('ctx', ctx); mostrarCtx();
-}));
 
-/* ---------- estado na tela ---------- */
-function estado(txt, tipo) { const e = $('estado'); e.textContent = txt || ''; e.className = 'estado' + (tipo ? ' ' + tipo : ''); }
-function fala(txt) { const f = $('fala'); f.textContent = txt || 'Toque e fale'; f.classList.toggle('vazia', !txt); }
+/* ---------- datas ---------- */
+const DIAS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const z = n => String(n).padStart(2, '0');
+const mesmoDia = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+const hora = d => z(d.getHours()) + ':' + z(d.getMinutes());
+function quandoCurto(iso) {
+  if (!iso) return '';
+  const d = new Date(iso), hoje = new Date(), amanha = new Date(); amanha.setDate(hoje.getDate() + 1);
+  if (mesmoDia(d, hoje)) return hora(d);
+  if (mesmoDia(d, amanha)) return 'amanhã ' + hora(d);
+  return DIAS[d.getDay()].slice(0, 3).toLowerCase() + ' ' + z(d.getDate()) + '/' + z(d.getMonth() + 1) + ' ' + hora(d);
+}
 
-/* ---------- últimos anotados ---------- */
-function recentes() { return guarda.get('recentes', []); }
-function desenharRecentes() {
-  const ul = $('recentes'), lista = recentes().slice(0, 5);
-  ul.hidden = !lista.length;
-  ul.innerHTML = '';
-  for (const r of lista) {
-    const li = document.createElement('li');
-    const marca = r.cancelado ? '↺' : r.resposta ? '✓' : '·';
-    li.innerHTML = '<span class="marca"></span><span class="txt"><span class="t"></span><span class="sub"></span></span>';
-    li.querySelector('.marca').textContent = marca;
-    li.querySelector('.t').textContent = r.resposta || r.frase;
-    li.querySelector('.sub').textContent = r.cancelado ? 'desfeito'
-      : r.resposta ? (r.ctx === 'nice' ? 'Nice' : 'Pessoal')
-      : 'guardado · entra quando o PC estiver ligado';
-    ul.appendChild(li);
+/* ---------- estado: o que o PC publicou + o que eu fiz e ele ainda não aplicou ---------- */
+let estado = guarda.get('estado.' + ctx, null);
+function pendentes() { return guarda.get('ops', []); }
+function anotacoes() { return guarda.get('recentes', []); }
+
+function itensVisiveis() {
+  const base = estado && Array.isArray(estado.itens) ? estado.itens.map(x => ({ ...x })) : [];
+  const feitos = new Set((estado && estado.processados) || []);
+  const agora = new Date().toISOString();
+  let itens = base;
+  for (const op of pendentes().filter(o => o.ctx === ctx && !feitos.has(o.n))) {
+    const i = itens.findIndex(x => x.id === op.id);
+    if (i === -1) continue;
+    if (op.acao === 'apagar') itens.splice(i, 1);
+    else if (op.acao === 'reabrir') { itens[i].feito = false; itens[i].feitoEm = null; }
+    else if (op.acao === 'concluir') {
+      if (itens[i].repete) itens.splice(i, 1);          // o PC reagenda; some até voltar com a nova data
+      else { itens[i].feito = true; itens[i].feitoEm = op.em || agora; }
+    }
+  }
+  // anotações que o PC ainda não leu aparecem como "anotando…"
+  const comIssue = new Set(itens.map(x => x.issue).filter(Boolean));
+  const esperando = anotacoes().filter(r => r.ctx === ctx && !r.cancelado && !comIssue.has(r.n) && Date.now() - r.em < 3 * 86400000)
+    .map(r => ({ id: 'n' + r.n, texto: r.frase, esperando: true }));
+  return { itens, esperando };
+}
+
+/* ---------- desenhar ---------- */
+function linha(x, tipo) {
+  const li = document.createElement('li');
+  li.className = 'tarefa' + (x.feito ? ' feita' : '') + (x.esperando ? ' esperando' : '');
+  li.dataset.id = x.id;
+  const atrasada = !x.feito && x.quando && new Date(x.quando) < new Date() && !mesmoDia(new Date(x.quando), new Date());
+  const h = x.esperando ? 'anotando…' : tipo === 'feita' ? hora(new Date(x.feitoEm)) : quandoCurto(x.quando);
+  li.innerHTML = '<button class="apagar" tabindex="-1">Apagar</button><div class="frente">'
+    + '<button class="bol" aria-label="Concluir"></button><span class="txt"><span class="t"></span></span>'
+    + '<span class="h' + (atrasada ? ' atraso' : '') + '"></span></div>';
+  li.querySelector('.t').textContent = x.texto;
+  li.querySelector('.h').textContent = h;
+  if (x.etiqueta) { const s = document.createElement('span'); s.className = 'tag'; s.textContent = x.etiqueta; li.querySelector('.txt').appendChild(s); }
+  if (!x.esperando) {
+    li.querySelector('.bol').addEventListener('click', e => { e.stopPropagation(); enviarComando(x.feito ? 'reabrir' : 'concluir', x); });
+    li.querySelector('.apagar').addEventListener('click', () => enviarComando('apagar', x));
+    arrastar(li);
+  }
+  return li;
+}
+function secao(titulo, lista, tipo, vazio) {
+  if (!lista.length && !vazio) return null;
+  const s = document.createElement('section'); s.className = 'secao';
+  s.innerHTML = '<div class="rotulo"><span></span><span></span></div><ul></ul>';
+  s.querySelector('.rotulo span').textContent = titulo;
+  s.querySelectorAll('.rotulo span')[1].textContent = lista.length || '';
+  const ul = s.querySelector('ul');
+  if (!lista.length) { const p = document.createElement('div'); p.className = 'vazio'; p.textContent = vazio; s.appendChild(p); }
+  lista.forEach(x => ul.appendChild(linha(x, tipo)));
+  return s;
+}
+function desenhar() {
+  document.documentElement.dataset.ctx = ctx;
+  document.querySelectorAll('.troca button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.ctx === ctx)));
+  const agora = new Date(), fimHoje = new Date(); fimHoje.setHours(23, 59, 59, 999);
+  const h = agora.getHours();
+  $('ola').textContent = (h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite') + (nome ? ', ' + nome + '.' : '.');
+
+  const { itens, esperando } = itensVisiveis();
+  const abertos = itens.filter(x => !x.feito);
+  const ordem = (a, b) => new Date(a.quando) - new Date(b.quando);
+  const hoje = abertos.filter(x => x.quando && new Date(x.quando) <= fimHoje).sort(ordem);
+  const depois = abertos.filter(x => x.quando && new Date(x.quando) > fimHoje).sort(ordem).slice(0, 6);
+  const semData = abertos.filter(x => !x.quando);
+  const feitasHoje = itens.filter(x => x.feito && x.feitoEm && mesmoDia(new Date(x.feitoEm), agora))
+    .sort((a, b) => new Date(b.feitoEm) - new Date(a.feitoEm));
+
+  const faltam = hoje.length;
+  $('dia').textContent = DIAS[agora.getDay()] + ', ' + agora.getDate() + ' de ' + MESES[agora.getMonth()] + ' · '
+    + (!estado ? 'buscando sua lista…' : faltam ? (faltam === 1 ? 'falta 1' : 'faltam ' + faltam) : 'nada pendente hoje');
+
+  const el = $('listas'); el.innerHTML = '';
+  [secao('Hoje', [...esperando, ...hoje], 'hoje', estado ? 'Nada marcado para hoje.' : ''),
+   secao('Feitas hoje', feitasHoje, 'feita'),
+   secao('Próximos', depois, 'depois'),
+   secao('Sem data', semData, 'semdata')].forEach(s => s && el.appendChild(s));
+  if (!$('hist-tela').hidden) desenharHistorico();
+}
+function desenharHistorico() {
+  const { itens } = itensVisiveis();
+  const feitas = itens.filter(x => x.feito && x.feitoEm).sort((a, b) => new Date(b.feitoEm) - new Date(a.feitoEm));
+  const el = $('hist'); el.innerHTML = '';
+  if (!feitas.length) { el.innerHTML = '<p class="vazio">Nada concluído nos últimos 45 dias.</p>'; return; }
+  let diaAtual = '', ul = null;
+  const hoje = new Date(), ontem = new Date(); ontem.setDate(hoje.getDate() - 1);
+  for (const x of feitas) {
+    const d = new Date(x.feitoEm);
+    const rotulo = mesmoDia(d, hoje) ? 'Hoje' : mesmoDia(d, ontem) ? 'Ontem' : DIAS[d.getDay()] + ', ' + d.getDate() + ' de ' + MESES[d.getMonth()];
+    if (rotulo !== diaAtual) {
+      diaAtual = rotulo;
+      const h = document.createElement('h2'); h.className = 'hist-dia'; h.textContent = rotulo; el.appendChild(h);
+      ul = document.createElement('ul'); el.appendChild(ul);
+    }
+    ul.appendChild(linha(x, 'feita'));
   }
 }
-function atualizarRecente(numero, campos) {
-  const lista = recentes(); const r = lista.find(x => x.n === numero);
-  if (r) { Object.assign(r, campos); guarda.set('recentes', lista); desenharRecentes(); }
+
+/* ---------- arrastar para apagar ---------- */
+let aberta = null;
+function fecharAberta() { if (aberta) { aberta.querySelector('.frente').style.transform = ''; aberta = null; } }
+function arrastar(li) {
+  const frente = li.querySelector('.frente');
+  let x0 = 0, y0 = 0, dx = 0, ativo = false, decidido = false;
+  frente.addEventListener('pointerdown', e => {
+    if (aberta && aberta !== li) fecharAberta();
+    x0 = e.clientX; y0 = e.clientY; dx = 0; ativo = true; decidido = false;
+  });
+  frente.addEventListener('pointermove', e => {
+    if (!ativo) return;
+    const mx = e.clientX - x0, my = e.clientY - y0;
+    if (!decidido) { if (Math.abs(mx) < 8 && Math.abs(my) < 8) return; decidido = true; if (Math.abs(my) > Math.abs(mx)) { ativo = false; return; } li.classList.add('arrastando'); frente.setPointerCapture(e.pointerId); }
+    dx = Math.max(-96, Math.min(0, mx + (aberta === li ? -84 : 0)));
+    frente.style.transform = 'translateX(' + dx + 'px)';
+  });
+  const soltar = () => {
+    if (!ativo) return; ativo = false; li.classList.remove('arrastando');
+    if (!decidido) return;
+    if (dx < -42) { frente.style.transform = 'translateX(-84px)'; aberta = li; }
+    else { frente.style.transform = ''; if (aberta === li) aberta = null; }
+  };
+  frente.addEventListener('pointerup', soltar);
+  frente.addEventListener('pointercancel', soltar);
+}
+document.addEventListener('pointerdown', e => { if (aberta && !aberta.contains(e.target)) fecharAberta(); });
+
+/* ---------- aviso rápido embaixo ---------- */
+let tAviso = null;
+function aviso(txt, acao) {
+  $('aviso-txt').textContent = txt; $('aviso').hidden = false;
+  const b = $('aviso-acao'); b.hidden = !acao; b.onclick = acao ? () => { $('aviso').hidden = true; acao(); } : null;
+  clearTimeout(tAviso); tAviso = setTimeout(() => { $('aviso').hidden = true; }, acao ? 6000 : 3500);
+}
+function erroDeChave(e) {
+  if (e && e.chave) { aviso('A chave não vale mais. Toque em ALFRED para trocar.'); return true; }
+  return false;
 }
 
-/* ---------- mandar ---------- */
-let ultimo = null, tempoDesfazer = null;
+/* ---------- concluir, apagar, reabrir ---------- */
+async function enviarComando(acao, x) {
+  fecharAberta();
+  const op = { acao, id: x.id, ctx, em: new Date().toISOString(), n: null };
+  const ops = pendentes(); ops.push(op); guarda.set('ops', ops);
+  if (navigator.vibrate) navigator.vibrate(15);
+  desenhar();
+  try {
+    const i = await abrirIssue('[' + ctx + ':' + acao + '] ' + x.id + ' · ' + x.texto.slice(0, 60));
+    const lista = pendentes(); const o = lista.find(y => y.em === op.em && y.id === op.id); if (o) o.n = i.number; guarda.set('ops', lista);
+    if (acao === 'apagar') aviso('Apagada.');
+    buscarLogo();
+  } catch (e) {
+    guarda.set('ops', pendentes().filter(y => !(y.em === op.em && y.id === op.id)));
+    desenhar();
+    if (!erroDeChave(e)) aviso('Sem internet? Não consegui ' + acao + '.');
+  }
+}
+
+/* ---------- anotar ---------- */
 async function anotar(frase) {
   frase = String(frase || '').trim();
   if (!frase) return;
-  fala(frase);
-  estado('Guardando…');
+  fecharFolha();
   try {
-    const r = await gh('/issues', { method: 'POST',
-      body: JSON.stringify({ title: '[' + ctx + '] ' + frase }) });
-    if (r.status === 401 || r.status === 403 || r.status === 404) { estado('A chave não vale mais. Toque aqui para trocar.', 'erro'); $('estado').onclick = configurar; return; }
-    if (!r.ok) throw new Error('GitHub ' + r.status);
-    const i = await r.json();
-    ultimo = i.number;
-    guarda.set('recentes', [{ n: i.number, frase, ctx, em: Date.now() }, ...recentes()].slice(0, 20));
-    desenharRecentes();
-    estado('Guardado', 'ok');
+    const i = await abrirIssue('[' + ctx + '] ' + frase);
+    guarda.set('recentes', [{ n: i.number, frase, ctx, em: Date.now() }, ...anotacoes()].slice(0, 30));
+    desenhar();
     if (navigator.vibrate) navigator.vibrate(30);
-    $('desfazer').hidden = false;
-    clearTimeout(tempoDesfazer);
-    tempoDesfazer = setTimeout(() => { $('desfazer').hidden = true; }, 6000);
-    acompanhar(i.number);
+    aviso('Anotando…', async () => {
+      try {
+        await gh('/issues/' + i.number, { method: 'PATCH', body: JSON.stringify({ state: 'closed', state_reason: 'not_planned' }) });
+        guarda.set('recentes', anotacoes().map(r => r.n === i.number ? { ...r, cancelado: true } : r));
+        desenhar(); aviso('Desfeito.');
+      } catch { aviso('Não consegui desfazer.'); }
+    });
+    esperarAnotacao(i.number);
   } catch (e) {
-    estado('Sem internet? Não guardou. Tente de novo.', 'erro');
+    if (!erroDeChave(e)) aviso('Sem internet? Não guardou. Tente de novo.');
   }
 }
-
-/* a ponte do PC fecha a issue e comenta o que entendeu: mostra aqui */
-async function acompanhar(numero) {
-  for (let k = 0; k < 24; k++) {                       // até 2 minutos
+async function esperarAnotacao(numero) {
+  for (let k = 0; k < 30; k++) {                 // até ~2,5 min
     await new Promise(r => setTimeout(r, 5000));
-    if (ultimo !== numero) return;
-    try {
-      const r = await gh('/issues/' + numero);
-      const i = await r.json();
-      if (i.state !== 'closed') continue;
-      if (i.state_reason === 'not_planned') return;
-      const c = await (await gh('/issues/' + numero + '/comments')).json();
-      const txt = ((c[c.length - 1] || {}).body || '').replace(/\*\*/g, '').replace(/^✅\s*Anotado no secretário[^:]*:\s*/, '');
-      atualizarRecente(numero, { resposta: txt });
-      if (ultimo === numero) { fala(''); estado('✓ ' + txt, 'ok'); }
-      return;
-    } catch {}
+    await buscar();
+    const x = estado && estado.itens.find(y => y.issue === numero);
+    if (x) { aviso('✓ ' + x.texto + (x.quando ? ' · ' + quandoCurto(x.quando) : '')); return; }
   }
-  if (ultimo === numero) estado('Guardado. O PC anota quando acordar.');
 }
 
-$('desfazer').addEventListener('click', async () => {
-  const n = ultimo; if (!n) return;
-  $('desfazer').hidden = true; ultimo = null;
+/* ---------- buscar a lista que o PC publicou ---------- */
+let buscando = false;
+async function buscar() {
+  if (buscando || !chave) return; buscando = true;
   try {
-    await gh('/issues/' + n, { method: 'PATCH', body: JSON.stringify({ state: 'closed', state_reason: 'not_planned' }) });
-    atualizarRecente(n, { cancelado: true });
-    fala(''); estado('Desfeito');
-  } catch { estado('Não consegui desfazer', 'erro'); }
-});
+    const r = await gh('/issues?labels=alfred-estado&state=all&per_page=10');
+    if (!r.ok) return;
+    const issues = await r.json();
+    for (const c of ['pessoal', 'nice']) {
+      const i = issues.find(x => x.title.includes('[estado ' + c + ']'));
+      const m = i && (i.body || '').match(/```json\s*([\s\S]*?)```/);
+      if (!m) continue;
+      try { guarda.set('estado.' + c, JSON.parse(m[1])); } catch {}
+    }
+    estado = guarda.get('estado.' + ctx, null);
+    // comandos que o PC já aplicou saem da fila local
+    const feitos = new Set([...((guarda.get('estado.pessoal', {}) || {}).processados || []), ...((guarda.get('estado.nice', {}) || {}).processados || [])]);
+    guarda.set('ops', pendentes().filter(o => !(o.n && feitos.has(o.n)) && Date.now() - new Date(o.em) < 7 * 86400000));
+    desenhar();
+  } catch {} finally { buscando = false; }
+}
+let tLogo = null;
+function buscarLogo() { clearTimeout(tLogo); tLogo = setTimeout(buscar, 25000); }
 
 /* ---------- ouvir ---------- */
 const Reconhecer = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, ouvindo = false, texto = '';
+function abrirFolha(modo) {
+  $('folha').hidden = false;
+  $('escrever-form').hidden = modo !== 'escrever';
+  $('fala').hidden = modo === 'escrever';
+  $('folha-rotulo').textContent = modo === 'escrever' ? 'Escrever' : 'Ouvindo';
+  if (modo === 'escrever') setTimeout(() => $('campo').focus(), 50);
+}
+function fecharFolha() { $('folha').hidden = true; $('mic').classList.remove('ouvindo'); }
 function ouvir() {
   if (ouvindo) { rec && rec.stop(); return; }
-  if (!Reconhecer) { abrirTeclado(); return; }
+  if (!$('folha').hidden && !$('escrever-form').hidden) { fecharFolha(); return; }
+  if (!Reconhecer) { abrirFolha('escrever'); return; }
   rec = new Reconhecer();
   rec.lang = 'pt-BR'; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
   texto = '';
-  rec.onstart = () => { ouvindo = true; $('mic').classList.add('ouvindo'); estado('Ouvindo…'); fala(''); $('desfazer').hidden = true; };
+  rec.onstart = () => { ouvindo = true; $('mic').classList.add('ouvindo'); abrirFolha('ouvir'); $('fala').textContent = 'Pode falar…'; $('fala').classList.add('vazia'); };
   rec.onresult = ev => {
-    let t = '';
-    for (const r of ev.results) t += r[0].transcript;
-    texto = t; fala(t);
+    let t = ''; for (const r of ev.results) t += r[0].transcript;
+    texto = t; $('fala').textContent = t; $('fala').classList.toggle('vazia', !t);
   };
   rec.onerror = ev => {
-    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { estado('Sem permissão do microfone. Use o teclado.', 'erro'); abrirTeclado(); }
-    else if (ev.error === 'no-speech') estado('Não ouvi nada. Toque e fale de novo.');
+    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { aviso('Sem acesso ao microfone. Use Escrever.'); abrirFolha('escrever'); }
   };
   rec.onend = () => {
     ouvindo = false; $('mic').classList.remove('ouvindo');
-    if (texto.trim()) anotar(texto); else if ($('estado').textContent === 'Ouvindo…') estado('');
+    if (texto.trim()) anotar(texto);
+    else if ($('escrever-form').hidden) { fecharFolha(); aviso('Não ouvi nada. Toque e fale de novo.'); }
   };
-  try { rec.start(); } catch { abrirTeclado(); }
+  try { rec.start(); } catch { abrirFolha('escrever'); }
 }
 $('mic').addEventListener('click', ouvir);
+$('ir-escrever').addEventListener('click', () => $('folha').hidden ? abrirFolha('escrever') : fecharFolha());
+$('escrever-form').addEventListener('submit', e => { e.preventDefault(); const v = $('campo').value; $('campo').value = ''; anotar(v); });
+$('rola').addEventListener('pointerdown', () => { if (!ouvindo && !$('folha').hidden) fecharFolha(); });
 
-function abrirTeclado() { $('digitar').hidden = false; $('teclado').hidden = true; $('campo').focus(); }
-$('teclado').addEventListener('click', abrirTeclado);
-$('digitar').addEventListener('submit', e => { e.preventDefault(); const v = $('campo').value; $('campo').value = ''; anotar(v); });
+/* ---------- navegação ---------- */
+$('ir-hist').addEventListener('click', () => { $('hoje-tela').hidden = true; $('hist-tela').hidden = false; desenharHistorico(); $('rola').scrollTop = 0; });
+$('voltar').addEventListener('click', () => { $('hist-tela').hidden = true; $('hoje-tela').hidden = false; });
+document.querySelectorAll('#troca button').forEach(b => b.addEventListener('click', () => {
+  ctx = b.dataset.ctx; guarda.set('ctx', ctx); estado = guarda.get('estado.' + ctx, null); desenhar();
+}));
+document.querySelectorAll('#troca-ajustes button').forEach(b => b.addEventListener('click', () => {
+  ctx = b.dataset.ctx; document.documentElement.dataset.ctx = ctx;
+  document.querySelectorAll('#troca-ajustes button').forEach(y => y.setAttribute('aria-pressed', String(y.dataset.ctx === ctx)));
+}));
 
-/* ---------- configuração (uma vez por aparelho) ---------- */
-function configurar() {
-  $('config').hidden = false; $('topo').hidden = true; $('tela').hidden = true; $('recentes').hidden = true;
-  $('chave').value = chave || '';
+/* ---------- ajustes ---------- */
+function abrirAjustes() {
+  ['topo', 'rola', 'base', 'folha'].forEach(id => $(id).hidden = true);
+  $('ajustes').hidden = false;
+  $('nome').value = nome; $('chave').value = chave;
+  document.querySelectorAll('#troca-ajustes button').forEach(y => y.setAttribute('aria-pressed', String(y.dataset.ctx === ctx)));
 }
+$('abrir-ajustes').addEventListener('click', abrirAjustes);
 $('salvar').addEventListener('click', async () => {
   const v = $('chave').value.trim();
-  if (!v) return;
-  $('estado-config').textContent = 'Conferindo…';
-  chave = v;
+  const s = $('estado-ajustes'); s.className = '';
+  if (!v) { s.textContent = 'Falta a chave do GitHub.'; s.className = 'erro'; return; }
+  s.textContent = 'Conferindo a chave…';
+  const antiga = chave; chave = v;
   try {
     const r = await gh('/issues?per_page=1');
     if (!r.ok) throw new Error();
-    guarda.set('chave', v); guarda.set('ctx', ctx);
+    nome = $('nome').value.trim();
+    guarda.set('chave', v); guarda.set('nome', nome); guarda.set('ctx', ctx);
+    s.textContent = '';
     iniciar();
-  } catch { $('estado-config').textContent = 'Essa chave não abriu o Bruce-. Confira e tente de novo.'; }
+  } catch {
+    chave = antiga;
+    s.textContent = 'Essa chave não abriu a lista. Confira se ela tem acesso ao Bruce- com Issues em "Read and write".'; s.className = 'erro';
+  }
 });
 
 function iniciar() {
-  mostrarCtx();
-  if (!chave) return configurar();
-  $('config').hidden = true; $('topo').hidden = false; $('tela').hidden = false;
-  desenharRecentes();
+  document.documentElement.dataset.ctx = ctx;
+  if (!chave) return abrirAjustes();
+  $('ajustes').hidden = true; ['topo', 'rola', 'base'].forEach(id => $(id).hidden = false);
+  estado = guarda.get('estado.' + ctx, null);
+  desenhar();
+  buscar();
 }
 iniciar();
+setInterval(() => { if (!document.hidden) buscar(); }, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) buscar(); });
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
