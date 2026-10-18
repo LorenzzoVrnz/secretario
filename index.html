@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Secretário</title>
+<meta name="theme-color" content="#0b0b0c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Secretário">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icone-180.png">
+<link rel="icon" href="icone-192.png">
+<!--
+  Secretário de bolso. Toca, fala, anota.
+
+  O celular não fala com o PC (que dorme): a frase vira uma issue no repo
+  privado Bruce-, e a ponte do PC (scripts/caixa-celular.js) busca a cada
+  minuto, interpreta com o Claude, grava no secretário certo e fecha a issue
+  com o que entendeu. Esta página só guarda a frase e mostra a resposta.
+
+  A chave do GitHub fica só neste aparelho (localStorage), nunca no código.
+-->
+<style>
+  :root {
+    --fundo: #fafaf9; --texto: #1c1917; --suave: #78716c; --linha: #e7e5e4;
+    --cartao: #ffffff; --ok: #15803d; --erro: #b91c1c;
+    --cor: #16a34a; --cor-fraca: rgba(22, 163, 74, .14);
+  }
+  :root[data-ctx="nice"] { --cor: #2563eb; --cor-fraca: rgba(37, 99, 235, .14); }
+  @media (prefers-color-scheme: dark) {
+    :root { --fundo: #0b0b0c; --texto: #f5f5f4; --suave: #a8a29e; --linha: #292524;
+            --cartao: #161514; --ok: #4ade80; --erro: #f87171; }
+    :root[data-ctx="pessoal"] { --cor: #22c55e; --cor-fraca: rgba(34, 197, 94, .16); }
+    :root[data-ctx="nice"] { --cor: #3b82f6; --cor-fraca: rgba(59, 130, 246, .18); }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--fundo); color: var(--texto);
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  body { display: flex; flex-direction: column; min-height: 100dvh;
+    padding: max(16px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+             max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  [hidden] { display: none !important; }
+
+  header { display: flex; justify-content: center; }
+  .ctx { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: var(--linha); }
+  .ctx button { padding: 7px 16px; border-radius: 999px; font-size: 14px; color: var(--suave); font-weight: 500; }
+  .ctx button[aria-pressed="true"] { background: var(--cartao); color: var(--texto);
+    box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .ctx button[aria-pressed="true"]::before { content: ""; display: inline-block; width: 7px; height: 7px;
+    border-radius: 50%; background: var(--cor); margin-right: 7px; vertical-align: 1px; }
+
+  main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; }
+  .fala { min-height: 3.2em; max-width: 30ch; text-align: center; font-size: 22px; font-weight: 500;
+    letter-spacing: -.01em; }
+  .fala.vazia { color: var(--suave); font-weight: 400; font-size: 18px; }
+  .mic { width: 112px; height: 112px; border-radius: 50%; background: var(--cor); color: #fff;
+    display: grid; place-items: center; position: relative; transition: transform .15s; }
+  .mic:active { transform: scale(.96); }
+  .mic svg { width: 40px; height: 40px; }
+  .mic.ouvindo::after { content: ""; position: absolute; inset: -14px; border-radius: 50%;
+    background: var(--cor-fraca); animation: pulsa 1.2s ease-out infinite; z-index: -1; }
+  @keyframes pulsa { 0% { transform: scale(.85); opacity: 1; } 100% { transform: scale(1.25); opacity: 0; } }
+  .estado { min-height: 1.4em; font-size: 15px; color: var(--suave); text-align: center; }
+  .estado.ok { color: var(--ok); } .estado.erro { color: var(--erro); }
+  .acao { font-size: 14px; color: var(--suave); text-decoration: underline; text-underline-offset: 3px; }
+
+  .digitar { width: 100%; max-width: 420px; display: flex; gap: 8px; }
+  .digitar input { flex: 1; min-width: 0; padding: 13px 14px; border-radius: 12px; border: 1px solid var(--linha);
+    background: var(--cartao); color: var(--texto); font: inherit; font-size: 17px; }
+  .digitar button { padding: 0 16px; border-radius: 12px; background: var(--cor); color: #fff; font-weight: 600; }
+
+  .recentes { list-style: none; margin: 0 auto; padding: 0; width: 100%; max-width: 420px; }
+  .recentes li { display: flex; gap: 10px; align-items: baseline; padding: 10px 2px; border-top: 1px solid var(--linha);
+    font-size: 15px; }
+  .recentes .marca { width: 1.2em; flex: none; text-align: center; }
+  .recentes .txt { flex: 1; min-width: 0; }
+  .recentes .sub { display: block; color: var(--suave); font-size: 13px; }
+
+  .config { max-width: 420px; margin: auto; display: flex; flex-direction: column; gap: 14px; }
+  .config h1 { font-size: 22px; margin: 0; }
+  .config p { margin: 0; color: var(--suave); font-size: 15px; }
+  .config input { padding: 13px 14px; border-radius: 12px; border: 1px solid var(--linha); background: var(--cartao);
+    color: var(--texto); font: inherit; font-size: 15px; }
+  .config .salvar { padding: 14px; border-radius: 12px; background: var(--cor); color: #fff; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<section class="config" id="config" hidden>
+  <h1>Secretário</h1>
+  <p>Cole a chave do GitHub uma vez. Ela fica só neste celular.</p>
+  <input id="chave" type="password" autocomplete="off" placeholder="github_pat_…">
+  <p>Este celular anota, por padrão, no:</p>
+  <div class="ctx" id="ctx-config" style="align-self:flex-start">
+    <button data-ctx="pessoal">Pessoal</button>
+    <button data-ctx="nice">Nice</button>
+  </div>
+  <button class="salvar" id="salvar">Salvar</button>
+  <div class="estado" id="estado-config"></div>
+</section>
+
+<header id="topo" hidden>
+  <div class="ctx" id="ctx-topo">
+    <button data-ctx="pessoal">Pessoal</button>
+    <button data-ctx="nice">Nice</button>
+  </div>
+</header>
+
+<main id="tela" hidden>
+  <div class="fala vazia" id="fala">Toque e fale</div>
+  <button class="mic" id="mic" aria-label="Falar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 17v4"/>
+    </svg>
+  </button>
+  <div class="estado" id="estado"></div>
+  <button class="acao" id="desfazer" hidden>Desfazer</button>
+  <form class="digitar" id="digitar" hidden>
+    <input id="campo" enterkeyhint="send" placeholder="Escreva ou dite pelo teclado">
+    <button>Anotar</button>
+  </form>
+  <button class="acao" id="teclado">Escrever</button>
+</main>
+
+<ul class="recentes" id="recentes" hidden></ul>
+
+<script>
+const REPO = 'LorenzzoVrnz/Bruce-';
+const API = 'https://api.github.com/repos/' + REPO;
+const $ = id => document.getElementById(id);
+
+/* ---------- guardado neste aparelho ---------- */
+const guarda = {
+  get(k, p) { try { const v = localStorage.getItem('sec.' + k); return v === null ? p : JSON.parse(v); } catch { return p; } },
+  set(k, v) { try { localStorage.setItem('sec.' + k, JSON.stringify(v)); } catch {} },
+};
+let ctx = guarda.get('ctx', 'pessoal');
+let chave = guarda.get('chave', '');
+
+function gh(caminho, opcoes = {}) {
+  return fetch(API + caminho, { ...opcoes, headers: { Authorization: 'Bearer ' + chave,
+    Accept: 'application/vnd.github+json', 'content-type': 'application/json' } });
+}
+
+/* ---------- contexto: verde pessoal, azul Nice ---------- */
+function mostrarCtx() {
+  document.documentElement.dataset.ctx = ctx;
+  document.querySelectorAll('.ctx button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.ctx === ctx)));
+}
+document.querySelectorAll('.ctx button').forEach(b => b.addEventListener('click', () => {
+  ctx = b.dataset.ctx; guarda.set('ctx', ctx); mostrarCtx();
+}));
+
+/* ---------- estado na tela ---------- */
+function estado(txt, tipo) { const e = $('estado'); e.textContent = txt || ''; e.className = 'estado' + (tipo ? ' ' + tipo : ''); }
+function fala(txt) { const f = $('fala'); f.textContent = txt || 'Toque e fale'; f.classList.toggle('vazia', !txt); }
+
+/* ---------- últimos anotados ---------- */
+function recentes() { return guarda.get('recentes', []); }
+function desenharRecentes() {
+  const ul = $('recentes'), lista = recentes().slice(0, 5);
+  ul.hidden = !lista.length;
+  ul.innerHTML = '';
+  for (const r of lista) {
+    const li = document.createElement('li');
+    const marca = r.cancelado ? '↺' : r.resposta ? '✓' : '·';
+    li.innerHTML = '<span class="marca"></span><span class="txt"><span class="t"></span><span class="sub"></span></span>';
+    li.querySelector('.marca').textContent = marca;
+    li.querySelector('.t').textContent = r.resposta || r.frase;
+    li.querySelector('.sub').textContent = r.cancelado ? 'desfeito'
+      : r.resposta ? (r.ctx === 'nice' ? 'Nice' : 'Pessoal')
+      : 'guardado · entra quando o PC estiver ligado';
+    ul.appendChild(li);
+  }
+}
+function atualizarRecente(numero, campos) {
+  const lista = recentes(); const r = lista.find(x => x.n === numero);
+  if (r) { Object.assign(r, campos); guarda.set('recentes', lista); desenharRecentes(); }
+}
+
+/* ---------- mandar ---------- */
+let ultimo = null, tempoDesfazer = null;
+async function anotar(frase) {
+  frase = String(frase || '').trim();
+  if (!frase) return;
+  fala(frase);
+  estado('Guardando…');
+  try {
+    const r = await gh('/issues', { method: 'POST',
+      body: JSON.stringify({ title: '[' + ctx + '] ' + frase }) });
+    if (r.status === 401 || r.status === 403 || r.status === 404) { estado('A chave não vale mais. Toque aqui para trocar.', 'erro'); $('estado').onclick = configurar; return; }
+    if (!r.ok) throw new Error('GitHub ' + r.status);
+    const i = await r.json();
+    ultimo = i.number;
+    guarda.set('recentes', [{ n: i.number, frase, ctx, em: Date.now() }, ...recentes()].slice(0, 20));
+    desenharRecentes();
+    estado('Guardado', 'ok');
+    if (navigator.vibrate) navigator.vibrate(30);
+    $('desfazer').hidden = false;
+    clearTimeout(tempoDesfazer);
+    tempoDesfazer = setTimeout(() => { $('desfazer').hidden = true; }, 6000);
+    acompanhar(i.number);
+  } catch (e) {
+    estado('Sem internet? Não guardou. Tente de novo.', 'erro');
+  }
+}
+
+/* a ponte do PC fecha a issue e comenta o que entendeu: mostra aqui */
+async function acompanhar(numero) {
+  for (let k = 0; k < 24; k++) {                       // até 2 minutos
+    await new Promise(r => setTimeout(r, 5000));
+    if (ultimo !== numero) return;
+    try {
+      const r = await gh('/issues/' + numero);
+      const i = await r.json();
+      if (i.state !== 'closed') continue;
+      if (i.state_reason === 'not_planned') return;
+      const c = await (await gh('/issues/' + numero + '/comments')).json();
+      const txt = ((c[c.length - 1] || {}).body || '').replace(/\*\*/g, '').replace(/^✅\s*Anotado no secretário[^:]*:\s*/, '');
+      atualizarRecente(numero, { resposta: txt });
+      if (ultimo === numero) { fala(''); estado('✓ ' + txt, 'ok'); }
+      return;
+    } catch {}
+  }
+  if (ultimo === numero) estado('Guardado. O PC anota quando acordar.');
+}
+
+$('desfazer').addEventListener('click', async () => {
+  const n = ultimo; if (!n) return;
+  $('desfazer').hidden = true; ultimo = null;
+  try {
+    await gh('/issues/' + n, { method: 'PATCH', body: JSON.stringify({ state: 'closed', state_reason: 'not_planned' }) });
+    atualizarRecente(n, { cancelado: true });
+    fala(''); estado('Desfeito');
+  } catch { estado('Não consegui desfazer', 'erro'); }
+});
+
+/* ---------- ouvir ---------- */
+const Reconhecer = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, ouvindo = false, texto = '';
+function ouvir() {
+  if (ouvindo) { rec && rec.stop(); return; }
+  if (!Reconhecer) { abrirTeclado(); return; }
+  rec = new Reconhecer();
+  rec.lang = 'pt-BR'; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+  texto = '';
+  rec.onstart = () => { ouvindo = true; $('mic').classList.add('ouvindo'); estado('Ouvindo…'); fala(''); $('desfazer').hidden = true; };
+  rec.onresult = ev => {
+    let t = '';
+    for (const r of ev.results) t += r[0].transcript;
+    texto = t; fala(t);
+  };
+  rec.onerror = ev => {
+    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { estado('Sem permissão do microfone. Use o teclado.', 'erro'); abrirTeclado(); }
+    else if (ev.error === 'no-speech') estado('Não ouvi nada. Toque e fale de novo.');
+  };
+  rec.onend = () => {
+    ouvindo = false; $('mic').classList.remove('ouvindo');
+    if (texto.trim()) anotar(texto); else if ($('estado').textContent === 'Ouvindo…') estado('');
+  };
+  try { rec.start(); } catch { abrirTeclado(); }
+}
+$('mic').addEventListener('click', ouvir);
+
+function abrirTeclado() { $('digitar').hidden = false; $('teclado').hidden = true; $('campo').focus(); }
+$('teclado').addEventListener('click', abrirTeclado);
+$('digitar').addEventListener('submit', e => { e.preventDefault(); const v = $('campo').value; $('campo').value = ''; anotar(v); });
+
+/* ---------- configuração (uma vez por aparelho) ---------- */
+function configurar() {
+  $('config').hidden = false; $('topo').hidden = true; $('tela').hidden = true; $('recentes').hidden = true;
+  $('chave').value = chave || '';
+}
+$('salvar').addEventListener('click', async () => {
+  const v = $('chave').value.trim();
+  if (!v) return;
+  $('estado-config').textContent = 'Conferindo…';
+  chave = v;
+  try {
+    const r = await gh('/issues?per_page=1');
+    if (!r.ok) throw new Error();
+    guarda.set('chave', v); guarda.set('ctx', ctx);
+    iniciar();
+  } catch { $('estado-config').textContent = 'Essa chave não abriu o Bruce-. Confira e tente de novo.'; }
+});
+
+function iniciar() {
+  mostrarCtx();
+  if (!chave) return configurar();
+  $('config').hidden = true; $('topo').hidden = false; $('tela').hidden = false;
+  desenharRecentes();
+}
+iniciar();
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
